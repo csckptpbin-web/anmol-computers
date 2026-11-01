@@ -18,7 +18,7 @@ nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}button,.btn{border:0;bor
 <header>
  <div class="brand"><div class="logo">AC</div><div><h1>Anmol Computer’s</h1><p>Digital Service Centre · Customer Application Portal</p></div></div>
  <nav aria-label="Main navigation">
-  <button class="active" data-view="home">Home</button><button data-view="apply">Apply for Service</button><button data-view="track">Track Application</button><button data-view="admin">Admin Demo</button>
+  <button class="active" data-view="home">Home</button><button data-view="account">Customer Login</button><button data-view="apply">Apply for Service</button><button data-view="track">Track Application</button><button data-view="admin">Admin Demo</button>
  </nav>
 </header>
 <main>
@@ -49,6 +49,24 @@ nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}button,.btn{border:0;bor
   <div class="stats"><div class="stat"><b id="totalCount">0</b><span>Demo applications</span></div><div class="stat"><b id="pendingCount">0</b><span>Pending</span></div><div class="stat"><b>₹0</b><span>Demo payments</span></div></div>
   <div style="overflow-x:auto"><table><thead><tr><th>Reference</th><th>Applicant</th><th>Service</th><th>Status</th><th>Demo action</th></tr></thead><tbody id="adminRows"></tbody></table></div>
  </section>
+
+ <section id="account" class="view panel">
+  <h2>Customer Account</h2>
+  <p class="muted">Register or sign in to Anmol Computer’s. Use a test email account while we configure the system.</p>
+  <div class="formgrid">
+   <div><label for="authEmail">Email address</label><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com"></div>
+   <div><label for="authPassword">Password</label><input id="authPassword" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters"></div>
+   <div class="full" style="display:flex;gap:10px;flex-wrap:wrap">
+    <button type="button" id="registerBtn">Create account</button>
+    <button type="button" id="loginBtn">Sign in</button>
+    <button type="button" id="logoutBtn" class="hidden">Sign out</button>
+   </div>
+  </div>
+  <div id="authMessage" class="notice" role="status">Setup required: add your Supabase Project URL and Publishable key to this file before testing.</div>
+  <div id="accountStatus" class="muted"></div>
+  <p class="muted">Use test accounts only. Do not enter Aadhaar, bank details, or upload identity documents here.</p>
+ </section>
+
 </main>
 <footer>© <span id="year"></span> Anmol Computer’s · Digital Service Centre<br>Demo prototype — not an official government website.</footer>
 <script>
@@ -81,5 +99,77 @@ function renderAdmin(){const a=getApps();document.getElementById('totalCount').t
 function changeStatus(ref,status){const a=getApps();const x=a.find(v=>v.ref===ref);if(x){x.status=status;saveApps(a);renderAdmin()}}
 document.getElementById('year').textContent=new Date().getFullYear();renderServices();showView('home');
 </script>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* Replace these two placeholders with your own values.
+   Use ONLY the Publishable key, never a Secret/service_role key. */
+const SUPABASE_URL = "https://dzggtmvwbkgfgylrlpdt.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_SF9Sz_Xw9KhhLqC_8pjgmQ_k2R9fmLL";
+let supabaseClient = null;
+const authMessage = document.getElementById("authMessage");
+const accountStatus = document.getElementById("accountStatus");
+const logoutBtn = document.getElementById("logoutBtn");
+
+function showAuthMessage(message, error=false) {
+  authMessage.textContent = message;
+  authMessage.style.background = error ? "#ffe9e9" : "#e8f8ee";
+  authMessage.style.color = error ? "#8b1e1e" : "#176437";
+}
+function credentials() {
+  return {
+    email: document.getElementById("authEmail").value.trim(),
+    password: document.getElementById("authPassword").value
+  };
+}
+function validCredentials(email, password) {
+  if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) {
+    showAuthMessage("Enter a valid email address.", true); return false;
+  }
+  if (password.length < 8) {
+    showAuthMessage("Password must be at least 8 characters.", true); return false;
+  }
+  return true;
+}
+async function refreshAccountStatus() {
+  if (!supabaseClient) return;
+  const {data, error} = await supabaseClient.auth.getSession();
+  if (error) { showAuthMessage(error.message, true); return; }
+  const user = data.session && data.session.user;
+  accountStatus.textContent = user ? "Signed in as " + user.email : "You are not signed in.";
+  logoutBtn.classList.toggle("hidden", !user);
+}
+if (window.supabase && SUPABASE_URL.startsWith("https://") &&
+    !SUPABASE_URL.includes("PASTE_") && SUPABASE_PUBLISHABLE_KEY.startsWith("sb_publishable_")) {
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  refreshAccountStatus();
+  supabaseClient.auth.onAuthStateChange(() => refreshAccountStatus());
+} else {
+  showAuthMessage("Setup needed: replace both Supabase placeholders in this file.", true);
+}
+document.getElementById("registerBtn").addEventListener("click", async () => {
+  const {email, password} = credentials();
+  if (!validCredentials(email, password)) return;
+  if (!supabaseClient) { showAuthMessage("Supabase setup is not complete.", true); return; }
+  const {error} = await supabaseClient.auth.signUp({email, password});
+  if (error) showAuthMessage(error.message, true);
+  else showAuthMessage("Registration submitted. Check your email for a confirmation link.");
+});
+document.getElementById("loginBtn").addEventListener("click", async () => {
+  const {email, password} = credentials();
+  if (!validCredentials(email, password)) return;
+  if (!supabaseClient) { showAuthMessage("Supabase setup is not complete.", true); return; }
+  const {error} = await supabaseClient.auth.signInWithPassword({email, password});
+  if (error) showAuthMessage(error.message, true);
+  else { showAuthMessage("Signed in successfully."); await refreshAccountStatus(); }
+});
+logoutBtn.addEventListener("click", async () => {
+  if (!supabaseClient) return;
+  const {error} = await supabaseClient.auth.signOut();
+  if (error) showAuthMessage(error.message, true);
+  else { showAuthMessage("Signed out."); await refreshAccountStatus(); }
+});
+</script>
+
 </body>
 </html>
